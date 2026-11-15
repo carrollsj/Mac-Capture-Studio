@@ -1,0 +1,21 @@
+{
+  "name": "mac-capture-studio",
+  "version": "0.1.0",
+  "description": "A Snagit-inspired macOS screen capture and markup app with configurable hotkeys.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": [
+    "screen-capture",
+    "annotation",
+    "macos",
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}

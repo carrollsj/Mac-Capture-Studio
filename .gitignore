@@ -1,0 +1,10 @@
+.DS_Store
+*.app/
+*.zip
+node_modules/
+.build/
+build/
+dist/
+__pycache__/
+.claude/settings.local.json
+.env*
