@@ -7,6 +7,7 @@ Tool-specific files such as `CLAUDE.md` only point back here.
 Snagit-style macOS screen capture and markup app (Electron): capture, annotate, blur, crop, export.
 
 ## Ground rules
+- **Work from `ROADMAP.md`:** do the first unchecked item under "Next up" unless Sam asks for something else. Check it off (`- [x]`) and move it to "Done" when it is finished and tested.
 - GitHub (`origin`) holds the master copy. Pull before you start, and commit and push before you stop.
 - Work on a branch named for your AI: `claude/<topic>`, `codex/<topic>`, `muse/<topic>` and so on. Merge to `main` only when it builds and works.
 - Never commit secrets (`.env`, API keys, passwords) or build output. `.gitignore` already covers the usual ones.
