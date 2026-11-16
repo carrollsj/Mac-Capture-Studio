@@ -2,6 +2,12 @@
 
 A native macOS screenshot and markup app for quick how-to images. Press a hotkey, drag over part of the screen, and the capture opens straight in an editor. Drop numbered steps and arrows on it, then copy or drag it into an email or chat.
 
+## Download (no Xcode needed)
+
+Get the latest **Mac-Capture-Studio-x.y.zip** from [Releases](https://github.com/carrollsj/Mac-Capture-Studio/releases), unzip it, and drag the app into Applications. The first time you open it, macOS says it can't verify the developer, because the app isn't notarized. Go to **System Settings › Privacy & Security** and click **Open Anyway**.
+
+To share it with someone, send them the zip itself (AirDrop, Messages, email or a Drive link). The Releases link only works for people with access to this private repo.
+
 ## Use it
 
 1. Open **Mac Capture Studio** from Applications. It lives in the menu bar (camera icon), not the Dock. Opening the app again while it's running opens the editor.
