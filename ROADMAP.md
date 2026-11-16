@@ -1,17 +1,21 @@
 # Mac-Capture-Studio roadmap
 
-**Stage:** 🌱 Prototype
-**What it is:** Snagit-style screenshot and markup app (Electron), untouched since April.
+**Stage:** 🛠 In daily use (testing)
+**What it is:** Native macOS screenshot and markup app for quick step-by-step how-to images.
 
 ## Finish line
-Either a polished capture tool Sam uses daily, or retired.
+A polished capture tool Sam uses daily: hotkey → markup with numbered steps → copy/send in seconds.
 
 ## Next up (work top to bottom; check items off as they're done)
-- [ ] Run npm install && npm start and try it
-- [ ] Decide: keep improving, or retire (macOS has built-in screenshot markup)
+- [ ] Sam: use it for real for a few days; note anything slow or missing
+- [ ] Merge `claude/native-step-capture` into `main` once Sam confirms capture works
+- [ ] Record-your-own capture shortcut (today it's a choice of 5 presets)
+- [ ] Optional: scrolling capture, capture history window
 
 ## Later (after the finish line)
 - Nothing planned yet.
 
 ## Done
 - Moved to GitHub and ~/Developer; shared AI files added (2026-11-15)
+- Ran it: Electron couldn't run (no Node on this Mac); decided to keep and rebuild natively (2026-11-16)
+- Native rewrite: menu bar app, ⇧⌘2 global hotkey, editor with step numbers (auto-increment, pointer tails), arrow, box, circle, highlight, blur, text, crop, undo/redo, copy, drag-out, save (2026-11-16)
