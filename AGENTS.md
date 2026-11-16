@@ -28,6 +28,8 @@ Update `HANDOFF.md` (overwrite the "Latest session" section), then commit and pu
 - Only Xcode / Command Line Tools are needed. No packages.
 
 ## Project-specific notes
+- **This repo is public** (made public 2026-11-16 so Sam can share download links). Keep secrets and personal details out of commits, notes and release text.
+- New versions: bump CFBundleShortVersionString in Resources/Info.plist, run ./build.sh, zip the app with `ditto -c -k --keepParent`, and attach it to a GitHub release.
 - Rewritten from Electron to native Swift on 2026-11-16 because the Mac had no Node and Sam wanted a hotkey that is always available. The Electron prototype is in git history.
 - Builds are signed ad hoc, so macOS can ask for Screen Recording permission again after each rebuild.
 - All drawing lives in `Renderer` (Model.swift) and runs in a flipped context, so the screen and the exported PNG use the same code.
