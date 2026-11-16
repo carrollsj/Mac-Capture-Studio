@@ -277,6 +277,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             cropRect = CGRect(origin: p, size: .zero)
         default:
             guard let kind = tool.kind else { return }
+            // Clicking an existing number with the step tool (or whatever is already selected,
+            // with any tool) grabs it to move instead of stacking a new item on top.
+            if let i = hitIndex(p), (tool == .step && state.annotations[i].kind == .step) || i == selected {
+                selected = i
+                pendingUndo = state
+                drag = .move(p)
+                needsDisplay = true
+                return
+            }
             selected = nil
             drag = .create(p)
             draft = Annotation(kind: kind, a: p, b: p, color: color, size: size, number: nextStep)

@@ -89,11 +89,16 @@ final class DragWell: NSView, NSDraggingSource {
 }
 
 final class EditorController: NSWindowController, NSWindowDelegate {
-    let canvas: CanvasView
+    private(set) var canvas: CanvasView
     let scroll = NSScrollView()
-    let baseName: String
+    private(set) var baseName: String
+    private(set) var sourceURL: URL?
     var onClose: ((EditorController) -> Void)?
+    var onOpenNewWindow: ((URL) -> Void)?
     private var saveURL: URL?
+    private let history = HistoryStrip()
+    private var historyHeight: NSLayoutConstraint!
+    private var hoverArea: NSTrackingArea?
     private let toolControl = NSSegmentedControl()
     private var swatches: [SwatchButton] = []
     private let sizeSlider = NSSlider(value: 4, minValue: 1, maxValue: 12, target: nil, action: nil)
@@ -105,18 +110,16 @@ final class EditorController: NSWindowController, NSWindowDelegate {
     private var undoButton: NSButton!
     private var redoButton: NSButton!
 
-    init(image: CGImage, scale: CGFloat, name: String) {
+    init(image: CGImage, scale: CGFloat, name: String, sourceURL: URL? = nil) {
         canvas = CanvasView(image: image, scale: scale)
-        baseName = name
-        let d = UserDefaults.standard
-        if d.object(forKey: "tool") != nil, let t = Tool(rawValue: d.integer(forKey: "tool")), t != .crop { canvas.tool = t }
-        if d.object(forKey: "colorIndex") != nil { canvas.color = palette[min(max(d.integer(forKey: "colorIndex"), 0), palette.count - 1)].1 }
-        if d.object(forKey: "size") != nil { canvas.size = CGFloat(d.double(forKey: "size")) }
+        baseName = CaptureEntry.baseName(of: URL(fileURLWithPath: name + ".png"))
+        self.sourceURL = sourceURL
+        EditorController.applyPreferences(canvas)
 
         let pts = CanvasView.pointSize(image, scale)
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         let vis = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let chromeH: CGFloat = 46 + 26
+        let chromeH: CGFloat = 46 + 26 + 84
         let w = min(max(pts.width + 40, 980), vis.width * 0.9)
         let h = min(max(pts.height + chromeH + 40, 520), vis.height * 0.9)
         let win = NSWindow(contentRect: CGRect(x: 0, y: 0, width: w, height: h),
@@ -127,8 +130,50 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         win.setFrameOrigin(CGPoint(x: vis.midX - w / 2, y: vis.midY - h / 2))
         super.init(window: win)
         win.delegate = self
+        adoptSource(sourceURL)
         buildUI()
         canvas.onChange = { [weak self] in self?.refresh() }
+        refresh()
+    }
+
+    private static func applyPreferences(_ c: CanvasView) {
+        let d = UserDefaults.standard
+        if d.object(forKey: "tool") != nil, let t = Tool(rawValue: d.integer(forKey: "tool")), t != .crop { c.tool = t }
+        if d.object(forKey: "colorIndex") != nil { c.color = palette[min(max(d.integer(forKey: "colorIndex"), 0), palette.count - 1)].1 }
+        if d.object(forKey: "size") != nil { c.size = CGFloat(d.double(forKey: "size")) }
+    }
+
+    /// Reopening a "marked up" file saves back over it instead of making "marked up marked up".
+    private func adoptSource(_ url: URL?) {
+        sourceURL = url
+        if let url, url.deletingPathExtension().lastPathComponent.hasSuffix(CaptureEntry.markedSuffix) {
+            saveURL = url
+        } else {
+            saveURL = nil
+        }
+        if let url { baseName = CaptureEntry.baseName(of: url) }
+        window?.title = baseName
+        window?.representedURL = url
+        history.currentURL = url
+    }
+
+    /// Swap a different capture into this window (from the history strip), keeping unsaved markup.
+    func load(_ url: URL) {
+        guard url != sourceURL else { return }
+        guard let (img, scale) = ImageLoader.load(url) else { NSSound.beep(); return }
+        canvas.commitText()
+        if canvas.dirty { write(to: saveURL ?? defaultSaveURL) }
+        let tool = canvas.tool, color = canvas.color, size = canvas.size
+        let c = CanvasView(image: img, scale: scale)
+        c.tool = tool == .crop ? .select : tool
+        c.color = color
+        c.size = size
+        c.onChange = { [weak self] in self?.refresh() }
+        canvas = c
+        scroll.documentView = c
+        adoptSource(url)
+        zoomToFit(nil)
+        window?.makeFirstResponder(c)
         refresh()
     }
 
@@ -137,7 +182,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
     // MARK: UI
 
     private func symbolButton(_ symbol: String, _ tip: String, _ action: Selector) -> NSButton {
-        let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip) ?? NSImage(), target: self, action: action)
+        let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip.components(separatedBy: "\n").first) ?? NSImage(), target: self, action: action)
         b.bezelStyle = .texturedRounded
         b.toolTip = tip
         return b
@@ -151,7 +196,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         toolControl.segmentStyle = .texturedRounded
         for t in Tool.allCases {
             toolControl.setImage(NSImage(systemSymbolName: t.symbol, accessibilityDescription: t.title), forSegment: t.rawValue)
-            toolControl.setToolTip("\(t.title) (\(t.key.uppercased()))", forSegment: t.rawValue)
+            toolControl.setToolTip(t.help, forSegment: t.rawValue)
             toolControl.setWidth(34, forSegment: t.rawValue)
         }
         toolControl.target = self
@@ -162,6 +207,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         for (i, (name, c)) in palette.enumerated() {
             let s = SwatchButton(color: c, name: name)
             s.tag = i; s.target = self; s.action = #selector(colorChosen(_:))
+            s.toolTip = "\(name)\nColor for new items. Also recolors the selected item."
             swatches.append(s); colorRow.addArrangedSubview(s)
         }
 
@@ -170,7 +216,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         sizeSlider.isContinuous = true
         sizeSlider.doubleValue = Double(canvas.size)
         sizeSlider.widthAnchor.constraint(equalToConstant: 80).isActive = true
-        sizeSlider.toolTip = "Size of lines, numbers and text"
+        sizeSlider.toolTip = "Size\nHow thick lines are and how big numbers and text are. Changes the selected item too."
         let sizeLabel = NSTextField(labelWithString: "Size")
         sizeLabel.textColor = .secondaryLabelColor
 
@@ -181,19 +227,19 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         stepField.widthAnchor.constraint(equalToConstant: 22).isActive = true
         stepper.minValue = 1; stepper.maxValue = 99; stepper.increment = 1; stepper.valueWraps = false
         stepper.target = self; stepper.action = #selector(stepperChanged)
-        stepper.toolTip = "Number the next step will get (or type 1–9 on the image)"
+        stepper.toolTip = "Next step number\nThe number the next step will get. You can also type 1–9 on the image to restart numbering."
 
-        undoButton = symbolButton("arrow.uturn.backward", "Undo (⌘Z)", #selector(undoClicked))
-        redoButton = symbolButton("arrow.uturn.forward", "Redo (⇧⌘Z)", #selector(redoClicked))
+        undoButton = symbolButton("arrow.uturn.backward", "Undo  (⌘Z)\nTakes back the last change, including crops.", #selector(undoClicked))
+        redoButton = symbolButton("arrow.uturn.forward", "Redo  (⇧⌘Z)\nPuts back what you just undid.", #selector(redoClicked))
         let copy = NSButton(title: "Copy", target: self, action: #selector(copy(_:)))
         copy.bezelStyle = .rounded
         copy.keyEquivalent = ""
-        copy.toolTip = "Copy the marked-up image (⌘C). ⌘Return copies and closes."
+        copy.toolTip = "Copy  (⌘C)\nCopies the marked-up image so you can paste it into an email, chat or doc. ⌘Return copies and closes."
         copy.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
         copy.imagePosition = .imageLeading
         let save = NSButton(title: "Save", target: self, action: #selector(saveDocument(_:)))
         save.bezelStyle = .rounded
-        save.toolTip = "Save to Pictures › Mac Capture Studio (⌘S)"
+        save.toolTip = "Save  (⌘S)\nSaves the marked-up image to Pictures › Mac Capture Studio. ⇧⌘S lets you choose where."
         let well = DragWell()
         well.provider = { [weak self] in self?.dragFile() }
 
@@ -245,7 +291,13 @@ final class EditorController: NSWindowController, NSWindowDelegate {
 
         let divider = NSBox(); divider.boxType = .separator
         let divider2 = NSBox(); divider2.boxType = .separator
-        for v in [barBackground, bar, divider, scroll, divider2, hint, zoomLabel, toast] as [NSView] {
+        history.onOpen = { [weak self] url in self?.load(url) }
+        history.onOpenNewWindow = { [weak self] url in self?.onOpenNewWindow?(url) }
+        history.currentURL = sourceURL
+        history.reload()
+        let divider3 = NSBox(); divider3.boxType = .separator
+        historyHeight = history.heightAnchor.constraint(equalToConstant: UserDefaults.standard.bool(forKey: "hideHistory") ? 0 : 84)
+        for v in [barBackground, bar, divider, scroll, divider3, history, divider2, hint, zoomLabel, toast] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
@@ -264,7 +316,14 @@ final class EditorController: NSWindowController, NSWindowDelegate {
             scroll.topAnchor.constraint(equalTo: divider.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            divider2.topAnchor.constraint(equalTo: scroll.bottomAnchor),
+            divider3.topAnchor.constraint(equalTo: scroll.bottomAnchor),
+            divider3.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            divider3.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            history.topAnchor.constraint(equalTo: divider3.bottomAnchor),
+            history.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            history.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            historyHeight,
+            divider2.topAnchor.constraint(equalTo: history.bottomAnchor),
             divider2.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             divider2.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             hint.topAnchor.constraint(equalTo: divider2.bottomAnchor, constant: 5),
@@ -278,6 +337,41 @@ final class EditorController: NSWindowController, NSWindowDelegate {
             toast.heightAnchor.constraint(equalToConstant: 30),
         ])
         hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        // Hovering any toolbar control shows its description in the bottom bar right away.
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        bar.addTrackingArea(area)
+        hoverArea = area
+        toolbarView = bar
+    }
+
+    private weak var toolbarView: NSView?
+    private var hovering: String?
+
+    override func mouseMoved(with event: NSEvent) { updateHover(event) }
+    override func mouseEntered(with event: NSEvent) { updateHover(event) }
+    override func mouseExited(with event: NSEvent) { hovering = nil; refresh() }
+
+    private func updateHover(_ event: NSEvent) {
+        guard let bar = toolbarView, let content = window?.contentView else { return }
+        let p = content.convert(event.locationInWindow, from: nil)
+        var view = content.hitTest(p)
+        var text: String?
+        while let v = view, v !== bar {
+            if v === toolControl {
+                let x = toolControl.convert(event.locationInWindow, from: nil).x
+                var edge: CGFloat = 0
+                for t in Tool.allCases {
+                    edge += toolControl.width(forSegment: t.rawValue) + 1
+                    if x < edge { text = t.help; break }
+                }
+                break
+            }
+            if let tip = v.toolTip, !tip.isEmpty { text = tip; break }
+            view = v.superview
+        }
+        hovering = text?.replacingOccurrences(of: "\n", with: " — ")
+        refresh()
     }
 
     func showAndFit() {
@@ -290,7 +384,8 @@ final class EditorController: NSWindowController, NSWindowDelegate {
 
     private func refresh() {
         toolControl.selectedSegment = canvas.tool.rawValue
-        hint.stringValue = canvas.tool.hint
+        hint.stringValue = hovering ?? canvas.tool.hint
+        hint.textColor = hovering == nil ? .secondaryLabelColor : .labelColor
         stepField.stringValue = "\(canvas.nextStep)"
         stepper.integerValue = canvas.nextStep
         undoButton?.isEnabled = canvas.canUndo
@@ -399,6 +494,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try png.write(to: url)
             saveURL = url
+            NotificationCenter.default.post(name: .capturesChanged, object: nil)
             canvas.dirty = false
             refresh()
             return true
@@ -445,7 +541,25 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         return url
     }
 
+    @objc func toggleHistory(_ sender: Any?) {
+        let hide = historyHeight.constant > 0
+        UserDefaults.standard.set(hide, forKey: "hideHistory")
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            historyHeight.animator().constant = hide ? 0 : 84
+        }
+    }
+
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleHistory(_:)) {
+            item.title = historyHeight.constant > 0 ? "Hide Capture History" : "Show Capture History"
+        }
+        return true
+    }
+
     // MARK: Window
+
+    func windowDidBecomeKey(_ notification: Notification) { history.reload() }
 
     func windowWillClose(_ notification: Notification) {
         canvas.commitText()

@@ -12,7 +12,7 @@ A native macOS screenshot and markup app for quick how-to images. Press a hotkey
 
 | Tool | Key | What it does |
 |---|---|---|
-| Step number | S | Click to drop 1, 2, 3… in order. Drag from the spot to a target to add a pointer arrow. Type **1–9** to restart numbering, or use the Next stepper. |
+| Step number | S | Click empty space to drop 1, 2, 3… in order. Drag an existing number to move it. Drag from empty space to a target to add a pointer arrow. Type **1–9** to restart numbering, or use the Next stepper. |
 | Arrow | A | Drag from tail to point. Shift snaps to 45°. |
 | Box / Circle | R / O | Outline something. Shift for a square or perfect circle. |
 | Highlight | H | Translucent marker over an area. |
@@ -21,7 +21,11 @@ A native macOS screenshot and markup app for quick how-to images. Press a hotkey
 | Crop | C | Drag the area to keep. |
 | Select | V | Move items, drag the dots to reshape, Delete removes, double-click text to edit. |
 
-Picking a color or moving **Size** restyles the selected item. Undo and redo cover everything, crop included.
+Picking a color or moving **Size** restyles the selected item. Undo and redo cover everything, crop included. Hover over any button to see what it does; the description also appears in the bar at the bottom.
+
+### Capture history
+
+The strip under the image shows your recent captures, newest first, like Snagit's tray. Click one to open it in the same window (unsaved markup on the current one is saved first). If a capture has a marked-up copy, that's what you see. Right-click a thumbnail for Open in New Window, Open Original (without markup), Copy Image, Show in Finder, or Move to Trash. Hide or show the strip with ⇧⌘H.
 
 ### Sending it
 
@@ -31,7 +35,11 @@ Picking a color or moving **Size** restyles the selected item. Undo and redo cov
 
 ### Menu bar options
 
-Capture in 3 seconds (for open menus), New from Clipboard, Open Image…, Show Captures Folder, Capture Shortcut (⇧⌘2, ⌃⇧S, ⌥⌘S, ⌃⌥⌘S or F13), Open at Login, and How to Use.
+Capture in 3 seconds (for open menus), New from Clipboard, Open Image…, Show Captures Folder, Capture Shortcut, Open at Login, and How to Use.
+
+### Choosing your own shortcut
+
+Menu bar icon › Capture Shortcut › **Choose Your Own Shortcut…**, then press the keys you want. Any one modifier (⌃, ⌥ or ⌘) plus one key works, so two-key shortcuts like ⌃\` or ⌃1 are fine, as is a function key like F13 on its own. The window tells you if a shortcut is already taken or would break something (⌘C, ⌘Q, the macOS screenshot keys and so on). Quick presets: ⇧⌘2, ⌃\`, ⌃1, ⌃⇧S, F13.
 
 ## Build
 
@@ -50,6 +58,8 @@ The app is signed ad hoc (not notarized). After each rebuild macOS may ask for S
 - `Source/Editor.swift`: editor window, toolbar, copy, save and drag-out.
 - `Source/Canvas.swift`: the drawing surface: mouse and keyboard handling, undo, crop, export.
 - `Source/Model.swift`: tools, annotation model and all drawing code (shared by the screen and the export).
+- `Source/Shortcut.swift`: hotkey storage and the Choose Your Own Shortcut window.
+- `Source/History.swift`: the capture history strip and image loading.
 - `Tools/MakeIcon.swift`: draws the app icon at build time.
 
 The original Electron prototype is in git history (before the `claude/native-step-capture` branch).
