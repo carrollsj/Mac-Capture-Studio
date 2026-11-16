@@ -1,31 +1,55 @@
 # Mac Capture Studio
 
-A Snagit-inspired macOS capture and markup app. It supports screen/window capture, drawing and annotation tools, undo/redo, export/copy, and editable hotkeys.
+A native macOS screenshot and markup app for quick how-to images. Press a hotkey, drag over part of the screen, and the capture opens straight in an editor. Drop numbered steps and arrows on it, then copy or drag it into an email or chat.
 
-## Run on a Mac
+## Use it
 
-1. Install Node.js from <https://nodejs.org/> if `npm` is not available.
-2. In this folder, run:
+1. Open **Mac Capture Studio** from Applications. It lives in the menu bar (camera icon), not the Dock.
+2. Press **⇧⌘2** anywhere. Drag across what you want, or press **Space** and click a window. **Esc** cancels.
+3. The first time, macOS asks for **Screen Recording** permission. Turn on Mac Capture Studio under System Settings › Privacy & Security › Screen & System Audio Recording, then choose **Restart App**.
+
+### Editor
+
+| Tool | Key | What it does |
+|---|---|---|
+| Step number | S | Click to drop 1, 2, 3… in order. Drag from the spot to a target to add a pointer arrow. Type **1–9** to restart numbering, or use the Next stepper. |
+| Arrow | A | Drag from tail to point. Shift snaps to 45°. |
+| Box / Circle | R / O | Outline something. Shift for a square or perfect circle. |
+| Highlight | H | Translucent marker over an area. |
+| Blur | B | Pixelates anything private. |
+| Text | T | Click and type. Return finishes, Option-Return adds a line. |
+| Crop | C | Drag the area to keep. |
+| Select | V | Move items, drag the dots to reshape, Delete removes, double-click text to edit. |
+
+Picking a color or moving **Size** restyles the selected item. Undo and redo cover everything, crop included.
+
+### Sending it
+
+- **⌘C** copies the marked-up image. **⌘Return** copies it and closes the editor.
+- Drag the **Drag** box into Mail, Slack, Messages or a Finder folder.
+- **⌘S** saves to `~/Pictures/Mac Capture Studio`. Every capture is also kept there, and closing an editor with unsaved markup saves a “marked up” copy instead of discarding it.
+
+### Menu bar options
+
+Capture in 3 seconds (for open menus), New from Clipboard, Open Image…, Show Captures Folder, Capture Shortcut (⇧⌘2, ⌃⇧S, ⌥⌘S, ⌃⌥⌘S or F13), Open at Login, and How to Use.
+
+## Build
+
+Needs Xcode or the Command Line Tools. No other dependencies.
 
 ```bash
-npm install
-npm start
+./build.sh            # builds build/Mac Capture Studio.app (universal: Apple silicon + Intel)
+./build.sh --install  # also copies it to /Applications and opens it
 ```
 
-On first capture, macOS may ask for Screen Recording permission. Enable it in System Settings, then restart the app.
+The app is signed ad hoc (not notarized). After each rebuild macOS may ask for Screen Recording permission again. If captures come out showing only the desktop wallpaper, remove the app from that permission list, add it back, and restart the app.
 
-## Browser fallback
+## Code
 
-You can also open `src/index.html` directly in Chrome, Edge, or Safari. Capture and markup work, but global hotkeys only work while the page is focused.
+- `Source/main.swift`: menu bar item, global hotkey (Carbon, so no Accessibility permission is needed), capture via `/usr/sbin/screencapture -i`, menus.
+- `Source/Editor.swift`: editor window, toolbar, copy, save and drag-out.
+- `Source/Canvas.swift`: the drawing surface: mouse and keyboard handling, undo, crop, export.
+- `Source/Model.swift`: tools, annotation model and all drawing code (shared by the screen and the export).
+- `Tools/MakeIcon.swift`: draws the app icon at build time.
 
-## Features
-
-- Capture screen, window, or tab using the native picker
-- Markup tools: select, pen, highlighter, arrow, line, rectangle, ellipse, text, pixelate blur, crop
-- Change color and stroke width
-- Undo, redo, clear markup, reset image
-- Export PNG, copy PNG to clipboard, save/load project JSON
-- Configurable hotkeys saved locally
-- Electron global hotkeys for capture/open editor/quick export when running as the desktop app
-
-This is not a clone of TechSmith Snagit internals or proprietary workflows. It is a clean-room capture and markup app with a similar practical feature set.
+The original Electron prototype is in git history (before the `claude/native-step-capture` branch).
