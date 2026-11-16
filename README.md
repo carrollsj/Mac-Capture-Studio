@@ -46,7 +46,7 @@ Menu bar icon › Capture Shortcut › **Choose Your Own Shortcut…**, then pre
 Needs Xcode or the Command Line Tools. No other dependencies.
 
 ```bash
-./build.sh            # builds build/Mac Capture Studio.app (universal: Apple silicon + Intel)
+./build.sh            # builds build.noindex/Mac Capture Studio.app (universal: Apple silicon + Intel)
 ./build.sh --install  # also copies it to /Applications and opens it
 ```
 
