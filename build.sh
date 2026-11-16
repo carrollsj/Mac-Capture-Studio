@@ -1,9 +1,10 @@
 #!/bin/zsh
-# Builds "Mac Capture Studio.app" into build/. Pass --install to copy it to /Applications and open it.
+# Builds "Mac Capture Studio.app" into build.noindex/. Pass --install to copy it to /Applications and open it.
 set -euo pipefail
 ROOT="${0:A:h}"
 NAME="Mac Capture Studio"
-APP="$ROOT/build/$NAME.app"
+# ".noindex" keeps Spotlight and Launchpad from listing this copy next to the one in /Applications.
+APP="$ROOT/build.noindex/$NAME.app"
 TMP=$(mktemp -d /private/tmp/mcs-build.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 

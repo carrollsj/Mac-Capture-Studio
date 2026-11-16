@@ -24,7 +24,7 @@ Sam uses these to see which AI and which Mac made each change.
 Update `HANDOFF.md` (overwrite the "Latest session" section), then commit and push it, so the next AI or Mac can pick up cold.
 
 ## How to build and run
-- `./build.sh` builds `build/Mac Capture Studio.app`. `./build.sh --install` copies it to /Applications and opens it.
+- `./build.sh` builds `build.noindex/Mac Capture Studio.app` (the `.noindex` keeps it out of Spotlight/Launchpad). `./build.sh --install` copies it to /Applications and opens it.
 - Only Xcode / Command Line Tools are needed. No packages.
 
 ## Project-specific notes

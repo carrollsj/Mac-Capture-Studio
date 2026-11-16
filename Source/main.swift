@@ -3,21 +3,6 @@ import Carbon
 import ImageIO
 import ServiceManagement
 
-struct Hotkey {
-    let code: Int
-    let mods: Int
-    let name: String
-}
-
-/// Picked to avoid macOS's own ⌘⇧3/4/5 screenshot keys.
-let hotkeyChoices: [Hotkey] = [
-    Hotkey(code: kVK_ANSI_2, mods: cmdKey | shiftKey, name: "⇧⌘2"),
-    Hotkey(code: kVK_ANSI_S, mods: controlKey | shiftKey, name: "⌃⇧S"),
-    Hotkey(code: kVK_ANSI_S, mods: cmdKey | optionKey, name: "⌥⌘S"),
-    Hotkey(code: kVK_ANSI_S, mods: cmdKey | optionKey | controlKey, name: "⌃⌥⌘S"),
-    Hotkey(code: kVK_F13, mods: 0, name: "F13"),
-]
-
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static var capturesFolder: URL {
         FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0]
@@ -28,14 +13,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var editors: [EditorController] = []
     private var hotkeyRef: EventHotKeyRef?
     private var capturing = false
-    private var hotkeyIndex: Int {
-        get { min(max(UserDefaults.standard.integer(forKey: "hotkeyIndex"), 0), hotkeyChoices.count - 1) }
-        set { UserDefaults.standard.set(newValue, forKey: "hotkeyIndex") }
-    }
-    private var hotkey: Hotkey { hotkeyChoices[hotkeyIndex] }
+    private var hotkey = Hotkey.saved
+    private var recorder: ShortcutRecorder?
     private let statusMenu = NSMenu()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Show button descriptions quickly when hovering (the macOS default wait is long).
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 350, "autoCopy": true, "liveClipboard": false])
         NSApp.mainMenu = buildMainMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let icon = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Mac Capture Studio")
@@ -54,9 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    /// Double-clicking the app again starts a capture, which is usually what was wanted.
+    /// Opening the app again (Finder, Spotlight, Launchpad) opens the editor.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { capture(nil) }
+        if !flag { openEditorWindow(nil) }
         return true
     }
 
@@ -91,8 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item("Quit Mac Capture Studio", #selector(NSApplication.terminate(_:)), "q"),
         ])
         let newCapture = item("New Capture", #selector(capture(_:)), "n", target: self)
+        let openEd = item("Open Editor", #selector(openEditorWindow(_:)), "e", target: self)
         _ = add("File", [
             newCapture,
+            openEd,
             item("New from Clipboard", #selector(openClipboard(_:)), "n", [.command, .shift], target: self),
             item("Open…", #selector(openImage(_:)), "o", target: self),
             .separator(),
@@ -117,6 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item("Zoom Out", #selector(EditorController.zoomOut(_:)), "-"),
             item("Actual Size", #selector(EditorController.zoomActual(_:)), "0"),
             item("Zoom to Fit", #selector(EditorController.zoomToFit(_:)), "9"),
+            .separator(),
+            item("Hide Capture History", #selector(EditorController.toggleHistory(_:)), "h", [.command, .shift]),
         ])
         let window = add("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
@@ -129,7 +117,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === statusMenu else { return }
         menu.removeAllItems()
+        let open = item("Open Editor", #selector(openEditorWindow(_:)), target: self)
+        open.image = NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: nil)
+        open.toolTip = "Opens the editor with your most recent capture and the capture history."
+        menu.addItem(open)
+
+        let recent = CaptureEntry.scan(AppDelegate.capturesFolder, limit: 10)
+        let recentItem = NSMenuItem(title: "Recent Captures", action: nil, keyEquivalent: "")
+        let recentMenu = NSMenu()
+        if recent.isEmpty {
+            let none = item("No captures yet", nil)
+            none.isEnabled = false
+            recentMenu.addItem(none)
+        }
+        for e in recent {
+            let r = item(e.title + (e.isMarkedUp ? "  ✎" : ""), #selector(openRecent(_:)), target: self)
+            r.representedObject = e.display
+            r.image = ImageLoader.thumbnail(e.display, maxPixels: 64).map { img in
+                let s = img.size, scale = 32 / max(s.width, s.height, 1)
+                img.size = NSSize(width: s.width * scale, height: s.height * scale)
+                return img
+            }
+            recentMenu.addItem(r)
+        }
+        recentItem.submenu = recentMenu
+        menu.addItem(recentItem)
+        menu.addItem(.separator())
+
         let cap = item("Capture Area or Window   \(hotkey.name)", #selector(capture(_:)), target: self)
+        cap.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: nil)
         menu.addItem(cap)
         menu.addItem(item("Capture in 3 Seconds", #selector(captureDelayed(_:)), target: self))
         menu.addItem(item("New from Clipboard", #selector(openClipboard(_:)), target: self))
@@ -138,15 +154,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Show Captures Folder", #selector(showFolder(_:)), target: self))
 
         let keys = NSMenu()
-        for (i, h) in hotkeyChoices.enumerated() {
+        keys.addItem(item("Choose Your Own Shortcut…", #selector(recordHotkey(_:)), target: self))
+        keys.addItem(.separator())
+        let current = item("Current: \(hotkey.name)", nil)
+        current.isEnabled = false
+        keys.addItem(current)
+        for (i, h) in hotkeyPresets.enumerated() where h != hotkey {
             let k = item(h.name, #selector(chooseHotkey(_:)), target: self)
             k.tag = i
-            k.state = i == hotkeyIndex ? .on : .off
             keys.addItem(k)
         }
         let keysItem = NSMenuItem(title: "Capture Shortcut", action: nil, keyEquivalent: "")
         keysItem.submenu = keys
         menu.addItem(keysItem)
+
+        let auto = item("Copy Each Capture to Clipboard", #selector(toggleAutoCopy(_:)), target: self)
+        auto.state = UserDefaults.standard.bool(forKey: "autoCopy") ? .on : .off
+        auto.toolTip = "Puts every new capture on the clipboard the moment you take it, ready to paste."
+        menu.addItem(auto)
+        let live = item("Keep Clipboard Updated While Marking Up", #selector(toggleLiveClipboard(_:)), target: self)
+        live.state = UserDefaults.standard.bool(forKey: "liveClipboard") ? .on : .off
+        live.toolTip = "Every change in the editor (numbers, arrows, blur…) is copied automatically, so you can paste without pressing ⌘C."
+        menu.addItem(live)
 
         let login = item("Open at Login", #selector(toggleLogin(_:)), target: self)
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -168,12 +197,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), nil)
     }
 
-    private func registerHotkey(showErrors: Bool) {
+    private func unregisterHotkey() {
         if let r = hotkeyRef { UnregisterEventHotKey(r); hotkeyRef = nil }
+    }
+
+    /// Registers `h` as the live global hotkey. Returns false if macOS or another app already owns it.
+    @discardableResult
+    private func register(_ h: Hotkey) -> Bool {
+        unregisterHotkey()
+        return RegisterEventHotKey(UInt32(h.code), UInt32(h.mods), EventHotKeyID(signature: 0x4D435331, id: 1),
+                                   GetApplicationEventTarget(), 0, &hotkeyRef) == noErr
+    }
+
+    private func registerHotkey(showErrors: Bool) {
         let h = hotkey
-        let status = RegisterEventHotKey(UInt32(h.code), UInt32(h.mods), EventHotKeyID(signature: 0x4D435331, id: 1),
-                                         GetApplicationEventTarget(), 0, &hotkeyRef)
-        if status != noErr && showErrors {
+        if !register(h) && showErrors {
             let a = NSAlert()
             a.messageText = "\(h.name) is already used by another app"
             a.informativeText = "Pick a different shortcut from the menu bar icon › Capture Shortcut."
@@ -182,8 +220,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func chooseHotkey(_ sender: NSMenuItem) {
-        hotkeyIndex = sender.tag
+        hotkey = hotkeyPresets[sender.tag]
+        Hotkey.saved = hotkey
         registerHotkey(showErrors: true)
+    }
+
+    @objc private func recordHotkey(_ sender: Any?) {
+        if let r = recorder { r.window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        // Free the current shortcut so pressing it again is heard by the recorder, not treated as a capture.
+        unregisterHotkey()
+        let r = ShortcutRecorder(current: hotkey)
+        r.tryRegister = { [weak self] h in
+            guard let self else { return false }
+            let ok = self.register(h)
+            self.unregisterHotkey()
+            return ok
+        }
+        r.onFinish = { [weak self] chosen in
+            guard let self else { return }
+            if let chosen {
+                self.hotkey = chosen
+                Hotkey.saved = chosen
+            }
+            self.registerHotkey(showErrors: true)
+            self.recorder = nil
+        }
+        recorder = r
+        r.start()
     }
 
     // MARK: Capture
@@ -257,27 +320,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do { try FileManager.default.moveItem(at: tmp, to: dest) } catch {
             openEditor(url: tmp, name: name); return
         }
+        NotificationCenter.default.post(name: .capturesChanged, object: nil)
+        let copied = UserDefaults.standard.bool(forKey: "autoCopy")
+        if copied, let data = try? Data(contentsOf: dest) { EditorController.putOnClipboard(data) }
         openEditor(url: dest, name: name)
+        if copied {
+            editors.last?.announce(UserDefaults.standard.bool(forKey: "liveClipboard")
+                ? "On your clipboard. Markup is copied as you go."
+                : "Copied to clipboard. Mark it up, then ⌘C to copy again.")
+        }
     }
 
     // MARK: Editors
 
-    private func openEditor(url: URL, name: String) {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+    func openEditor(url: URL, name: String) {
+        if let existing = editors.first(where: { $0.sourceURL == url }) {
+            existing.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        guard let (img, scale) = ImageLoader.load(url) else {
             let a = NSAlert(); a.messageText = "Couldn’t open “\(url.lastPathComponent)” as an image."; a.runModal()
             return
         }
-        var scale: CGFloat = 1
-        if let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
-           let dpi = props[kCGImagePropertyDPIWidth] as? Double, dpi > 72 {
-            scale = CGFloat(dpi / 72)
-        }
-        openEditor(image: img, scale: scale, name: name)
+        openEditor(image: img, scale: scale, name: name, sourceURL: url)
     }
 
-    private func openEditor(image: CGImage, scale: CGFloat, name: String) {
-        let ed = EditorController(image: image, scale: scale, name: name)
+    private func openEditor(image: CGImage, scale: CGFloat, name: String, sourceURL: URL? = nil) {
+        let ed = EditorController(image: image, scale: scale, name: name, sourceURL: sourceURL)
+        ed.onOpenNewWindow = { [weak self] url in self?.openEditor(url: url, name: CaptureEntry.baseName(of: url)) }
         ed.onClose = { [weak self] e in
             guard let self else { return }
             self.editors.removeAll { $0 === e }
@@ -287,6 +358,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.setActivationPolicy(.regular)
         ed.showAndFit()
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Brings an open editor forward, or opens one on the newest capture.
+    @objc func openEditorWindow(_ sender: Any?) {
+        if let ed = editors.last {
+            ed.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        guard let newest = CaptureEntry.scan(AppDelegate.capturesFolder, limit: 1).first else {
+            NSApp.activate(ignoringOtherApps: true)
+            let a = NSAlert()
+            a.messageText = "No captures yet"
+            a.informativeText = "Take your first capture with \(hotkey.name) and it will open in the editor."
+            a.addButton(withTitle: "Capture Now")
+            a.addButton(withTitle: "Open Image…")
+            a.addButton(withTitle: "Cancel")
+            switch a.runModal() {
+            case .alertFirstButtonReturn: capture(nil)
+            case .alertSecondButtonReturn: openImage(nil)
+            default: break
+            }
+            return
+        }
+        openEditor(url: newest.display, name: newest.title)
+    }
+
+    @objc private func openRecent(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        openEditor(url: url, name: CaptureEntry.baseName(of: url))
     }
 
     @objc private func openImage(_ sender: Any?) {
@@ -316,6 +417,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(AppDelegate.capturesFolder)
     }
 
+    @objc private func toggleAutoCopy(_ sender: Any?) {
+        UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: "autoCopy"), forKey: "autoCopy")
+    }
+
+    @objc private func toggleLiveClipboard(_ sender: Any?) {
+        UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: "liveClipboard"), forKey: "liveClipboard")
+    }
+
     @objc private func toggleLogin(_ sender: Any?) {
         do {
             if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
@@ -332,14 +441,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Press \(hotkey.name) anywhere. Drag across what you want, or press Space and click a window. Esc cancels.
 
         The editor opens right away:
-        • Step numbers (S): click to drop 1, 2, 3… in order. Drag to add a pointer arrow. Type 1–9 to restart numbering.
+        • Step numbers (S): click to drop 1, 2, 3… in order. Drag an existing number to move it. Drag from empty space to add a pointer arrow. Type 1–9 to restart numbering.
         • Arrow (A), Box (R), Circle (O), Highlight (H), Blur (B), Text (T), Crop (C), Select (V).
         • Click a color or move Size to restyle the selected item. Delete removes it.
 
         Send it fast:
-        • ⌘C copies, and ⌘Return copies and closes. Then paste into an email or chat.
+        • Each new capture is already on your clipboard, so you can paste right away.
+        • After marking up, ⌘C copies again, and ⌘Return copies and closes. Or turn on “Keep Clipboard Updated While Marking Up” in the menu bar so the markup is copied as you go.
         • Or drag the “Drag” box into Mail, Slack or Messages.
-        • Captures are kept in Pictures › Mac Capture Studio.
+        • Every capture is kept in Pictures › Mac Capture Studio and shown in the history strip under the image. Click one to reopen it, or right-click for more.
+        • Hover over any button to see what it does.
         """
     }
 

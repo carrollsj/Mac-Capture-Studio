@@ -114,10 +114,47 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     func deleteSelected() {
         guard let i = selected, i < state.annotations.count else { return }
         let removed = state.annotations[i]
-        mutate { $0.annotations.remove(at: i) }
+        mutate { s in
+            s.annotations.remove(at: i)
+            // Close the gap: deleting 3 of 1–7 leaves 1–6. Skipped if another step shares
+            // the number (a restarted sequence), so unrelated numbers don't shift.
+            if removed.kind == .step, !s.annotations.contains(where: { $0.kind == .step && $0.number == removed.number }) {
+                for j in s.annotations.indices where s.annotations[j].kind == .step && s.annotations[j].number > removed.number {
+                    s.annotations[j].number -= 1
+                }
+            }
+        }
         selected = nil
         if removed.kind == .step { recomputeNextStep() }
     }
+
+    var stepNumbers: [Int] { state.annotations.filter { $0.kind == .step }.map(\.number) }
+
+    /// Moves step `i` to position `n` and shifts the steps in between, like reordering a list:
+    /// changing 7 to 3 turns the old 3–6 into 4–7.
+    func renumberStep(at i: Int, to n: Int) {
+        guard i < state.annotations.count, state.annotations[i].kind == .step, n >= 1 else { return }
+        let old = state.annotations[i].number
+        guard n != old else { return }
+        let occupied = state.annotations.indices.contains { $0 != i && state.annotations[$0].kind == .step && state.annotations[$0].number == n }
+        mutate { s in
+            if occupied {
+                for j in s.annotations.indices where j != i && s.annotations[j].kind == .step {
+                    let m = s.annotations[j].number
+                    if old < n, m > old, m <= n { s.annotations[j].number -= 1 }
+                    if old > n, m >= n, m < old { s.annotations[j].number += 1 }
+                }
+            }
+            s.annotations[i].number = n
+        }
+        recomputeNextStep()
+    }
+
+    private var digitBuffer = ""
+    private var digitTime: TimeInterval = 0
+    private var digitTarget: Int?
+    private var digitBase: DocState?
+    private var digitUndoDepth = 0
 
     func applyColor(_ c: NSColor) {
         color = c
@@ -277,6 +314,15 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             cropRect = CGRect(origin: p, size: .zero)
         default:
             guard let kind = tool.kind else { return }
+            // Clicking an existing number with the step tool (or whatever is already selected,
+            // with any tool) grabs it to move instead of stacking a new item on top.
+            if let i = hitIndex(p), (tool == .step && state.annotations[i].kind == .step) || i == selected {
+                selected = i
+                pendingUndo = state
+                drag = .move(p)
+                needsDisplay = true
+                return
+            }
             selected = nil
             drag = .create(p)
             draft = Annotation(kind: kind, a: p, b: p, color: color, size: size, number: nextStep)
@@ -342,8 +388,17 @@ final class CanvasView: NSView, NSTextFieldDelegate {
             let r = d.rect
             switch d.kind {
             case .step:
-                mutate { $0.annotations.append(d) }
-                nextStep = d.number + 1
+                // Placing a number that already exists inserts it: the old 3–7 become 4–8.
+                let inserting = stepNumbers.contains(d.number)
+                mutate { s in
+                    if inserting {
+                        for j in s.annotations.indices where s.annotations[j].kind == .step && s.annotations[j].number >= d.number {
+                            s.annotations[j].number += 1
+                        }
+                    }
+                    s.annotations.append(d)
+                }
+                if inserting { recomputeNextStep() } else { nextStep = d.number + 1 }
             case .arrow:
                 guard hypot(d.b.x - d.a.x, d.b.y - d.a.y) >= 6 else { return }
                 mutate { $0.annotations.append(d) }
@@ -374,6 +429,55 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         tool = .select
     }
 
+    // MARK: Right-click menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        commitText()
+        let p = point(event)
+        guard let i = hitIndex(p) else { return nil }
+        selected = i
+        let an = state.annotations[i]
+        let m = NSMenu()
+        if an.kind == .step {
+            let change = NSMenuItem(title: "Change Number To", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            let top = max(stepNumbers.max() ?? 1, an.number)
+            for n in 1...max(top, 1) {
+                let it = NSMenuItem(title: "\(n)", action: #selector(menuRenumber(_:)), keyEquivalent: "")
+                it.target = self
+                it.tag = n
+                it.state = n == an.number ? .on : .off
+                sub.addItem(it)
+            }
+            change.submenu = sub
+            m.addItem(change)
+            let tip = NSMenuItem(title: "Tip: select a number and type a new one", action: nil, keyEquivalent: "")
+            tip.isEnabled = false
+            m.addItem(tip)
+            m.addItem(.separator())
+        }
+        if an.kind == .text {
+            let edit = NSMenuItem(title: "Edit Text", action: #selector(menuEditText(_:)), keyEquivalent: "")
+            edit.target = self
+            m.addItem(edit)
+            m.addItem(.separator())
+        }
+        let del = NSMenuItem(title: an.kind == .step ? "Delete (later steps move up)" : "Delete", action: #selector(menuDelete(_:)), keyEquivalent: "")
+        del.target = self
+        m.addItem(del)
+        return m
+    }
+
+    @objc private func menuRenumber(_ sender: NSMenuItem) {
+        if let i = selected { renumberStep(at: i, to: sender.tag) }
+    }
+
+    @objc private func menuDelete(_ sender: NSMenuItem) { deleteSelected() }
+
+    @objc private func menuEditText(_ sender: NSMenuItem) {
+        if let i = selected, i < state.annotations.count { beginText(at: state.annotations[i].a, editing: i) }
+    }
+
     // MARK: Keyboard
 
     override func keyDown(with e: NSEvent) {
@@ -395,7 +499,25 @@ final class CanvasView: NSView, NSTextFieldDelegate {
         }
         if mods.isEmpty || mods == .shift, let ch = e.charactersIgnoringModifiers?.lowercased() {
             if let t = Tool.allCases.first(where: { $0.key == ch }) { tool = t; return }
-            if let n = Int(ch), n >= 1 { nextStep = n; tool = .step; return }
+            if let digit = Int(ch) {
+                // With a step selected, typing a number changes that step (two digits work too).
+                if let i = selected, i < state.annotations.count, state.annotations[i].kind == .step {
+                    let now = e.timestamp
+                    let continuing = i == digitTarget && now - digitTime < 0.9 && digitBuffer.count == 1
+                    if continuing, let base = digitBase, undoStack.count == digitUndoDepth + 1 {
+                        // Second digit: undo the one-digit change first so "1","2" means 12, not 1 then 12.
+                        undoStack.removeLast()
+                        state = base
+                    }
+                    digitBuffer = continuing ? digitBuffer + ch : ch
+                    if !continuing { digitBase = state; digitUndoDepth = undoStack.count }
+                    digitTarget = i
+                    digitTime = now
+                    if let n = Int(digitBuffer), n >= 1 { renumberStep(at: i, to: n) }
+                    return
+                }
+                if digit >= 1 { nextStep = digit; tool = .step; return }
+            }
         }
         super.keyDown(with: e)
     }
@@ -476,8 +598,8 @@ final class CanvasView: NSView, NSTextFieldDelegate {
     // MARK: Export
 
     /// The marked-up image at full resolution, with Retina DPI kept so it pastes at the right size.
-    func renderedPNG() -> Data? {
-        commitText()
+    func renderedPNG(commitEditing: Bool = true) -> Data? {
+        if commitEditing { commitText() }
         let pw = state.image.width, ph = state.image.height
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pw, pixelsHigh: ph, bitsPerSample: 8,
                                          samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,

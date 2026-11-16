@@ -13,7 +13,7 @@ enum Tool: Int, CaseIterable {
         case .rect: return "rectangle"
         case .ellipse: return "circle"
         case .highlight: return "highlighter"
-        case .blur: return "square.grid.3x3.fill"
+        case .blur: return "eye.slash"
         case .text: return "textformat"
         case .crop: return "crop"
         }
@@ -49,17 +49,20 @@ enum Tool: Int, CaseIterable {
 
     var hint: String {
         switch self {
-        case .select: return "Click to select, drag to move, drag the dots to reshape. Delete removes. Double-click text to edit."
-        case .step: return "Click to drop the next number. Drag from the spot to a target to add a pointer. Type 1–9 to restart numbering."
+        case .select: return "Click to select, drag to move, drag the dots to reshape. Delete removes. Type a number to renumber a selected step. Right-click for options."
+        case .step: return "Click to drop the next number; drag one to move it. Select a number and type to change it (others shift). Delete closes the gap. Right-click for options."
         case .arrow: return "Drag from the tail to the point. Hold Shift for straight lines."
         case .rect: return "Drag to draw a box. Hold Shift for a square."
         case .ellipse: return "Drag to draw a circle. Hold Shift for a perfect circle."
         case .highlight: return "Drag over the area to highlight."
-        case .blur: return "Drag over anything private to pixelate it."
+        case .blur: return "Drag over anything private (passwords, account numbers, emails) to pixelate it."
         case .text: return "Click to type. Return finishes, Option-Return adds a line, Esc cancels."
         case .crop: return "Drag the area to keep. Undo puts it back."
         }
     }
+
+    /// Shown as the hover tooltip and in the status bar.
+    var help: String { "\(title)  (shortcut: \(key.uppercased()))\n\(hint)" }
 
     var kind: Kind? {
         switch self {
