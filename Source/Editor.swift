@@ -132,7 +132,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         win.delegate = self
         adoptSource(sourceURL)
         buildUI()
-        canvas.onChange = { [weak self] in self?.refresh() }
+        canvas.onChange = { [weak self] in self?.refresh(); self?.scheduleLiveCopy() }
         refresh()
     }
 
@@ -168,7 +168,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         c.tool = tool == .crop ? .select : tool
         c.color = color
         c.size = size
-        c.onChange = { [weak self] in self?.refresh() }
+        c.onChange = { [weak self] in self?.refresh(); self?.scheduleLiveCopy() }
         canvas = c
         scroll.documentView = c
         adoptSource(url)
@@ -227,7 +227,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         stepField.widthAnchor.constraint(equalToConstant: 22).isActive = true
         stepper.minValue = 1; stepper.maxValue = 99; stepper.increment = 1; stepper.valueWraps = false
         stepper.target = self; stepper.action = #selector(stepperChanged)
-        stepper.toolTip = "Next step number\nThe number the next step will get. You can also type 1–9 on the image to restart numbering."
+        stepper.toolTip = "Next step number\nThe number the next step will get. If that number is already used, the new step is inserted and later steps move up."
 
         undoButton = symbolButton("arrow.uturn.backward", "Undo  (⌘Z)\nTakes back the last change, including crops.", #selector(undoClicked))
         redoButton = symbolButton("arrow.uturn.forward", "Redo  (⇧⌘Z)\nPuts back what you just undid.", #selector(redoClicked))
@@ -454,6 +454,32 @@ final class EditorController: NSWindowController, NSWindowDelegate {
         perform(#selector(hideToast), with: nil, afterDelay: 1.8)
     }
 
+    /// Brief message over the image, e.g. "Copied to clipboard" right after a capture.
+    func announce(_ text: String) { flash(text) }
+
+    static var liveClipboard: Bool { UserDefaults.standard.bool(forKey: "liveClipboard") }
+
+    private func scheduleLiveCopy() {
+        guard EditorController.liveClipboard, canvas.dirty else { return }
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(liveCopy), object: nil)
+        perform(#selector(liveCopy), with: nil, afterDelay: 0.4)
+    }
+
+    /// Keeps the clipboard matching the markup, without counting as "saved".
+    @objc private func liveCopy() {
+        guard let png = canvas.renderedPNG(commitEditing: false) else { return }
+        EditorController.putOnClipboard(png)
+    }
+
+    static func putOnClipboard(_ png: Data) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        let item = NSPasteboardItem()
+        item.setData(png, forType: .png)
+        if let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        pb.writeObjects([item])
+    }
+
     @objc private func hideToast() {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.3
@@ -464,12 +490,7 @@ final class EditorController: NSWindowController, NSWindowDelegate {
     @discardableResult
     private func copyToClipboard() -> Bool {
         guard let png = canvas.renderedPNG() else { NSSound.beep(); return false }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        let item = NSPasteboardItem()
-        item.setData(png, forType: .png)
-        if let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation { item.setData(tiff, forType: .tiff) }
-        pb.writeObjects([item])
+        EditorController.putOnClipboard(png)
         canvas.dirty = false
         refresh()
         return true

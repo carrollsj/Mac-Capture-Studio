@@ -49,8 +49,8 @@ enum Tool: Int, CaseIterable {
 
     var hint: String {
         switch self {
-        case .select: return "Click to select, drag to move, drag the dots to reshape. Delete removes. Double-click text to edit."
-        case .step: return "Click empty space to drop the next number. Drag an existing number to move it. Drag from empty space to add a pointer. Type 1–9 to restart."
+        case .select: return "Click to select, drag to move, drag the dots to reshape. Delete removes. Type a number to renumber a selected step. Right-click for options."
+        case .step: return "Click to drop the next number; drag one to move it. Select a number and type to change it (others shift). Delete closes the gap. Right-click for options."
         case .arrow: return "Drag from the tail to the point. Hold Shift for straight lines."
         case .rect: return "Drag to draw a box. Hold Shift for a square."
         case .ellipse: return "Drag to draw a circle. Hold Shift for a perfect circle."

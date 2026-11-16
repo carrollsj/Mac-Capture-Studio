@@ -8,7 +8,6 @@ A polished capture tool Sam uses daily: hotkey → markup with numbered steps �
 
 ## Next up (work top to bottom; check items off as they're done)
 - [ ] Sam: use it for real for a few days; note anything slow or missing
-- [ ] Steps renumber themselves when one is deleted
 - [ ] Step captions + automatic legend
 - [ ] Spotlight (dim everything except an area)
 - [ ] Magnifier callout
@@ -27,3 +26,4 @@ A polished capture tool Sam uses daily: hotkey → markup with numbered steps �
 - Native rewrite: menu bar app, ⇧⌘2 global hotkey, editor with step numbers (auto-increment, pointer tails), arrow, box, circle, highlight, blur, text, crop, undo/redo, copy, drag-out, save (2026-11-16)
 - Sam confirmed live hotkey capture works; merged to main (2026-11-16)
 - Choose-your-own capture shortcut (any modifier + key, or an F-key); step tool can grab and move existing numbers; hover descriptions on every button; Snagit-style capture history strip (2026-11-16)
+- Steps renumber on delete, can be renumbered by typing or right-click, and insert when the number exists; captures auto-copy to the clipboard, with an option to keep it updated while marking up (2026-11-16)

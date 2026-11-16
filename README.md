@@ -12,7 +12,7 @@ A native macOS screenshot and markup app for quick how-to images. Press a hotkey
 
 | Tool | Key | What it does |
 |---|---|---|
-| Step number | S | Click empty space to drop 1, 2, 3… in order. Drag an existing number to move it. Drag from empty space to a target to add a pointer arrow. Type **1–9** to restart numbering, or use the Next stepper. |
+| Step number | S | Click empty space to drop 1, 2, 3… in order. Drag an existing number to move it. Drag from empty space to a target to add a pointer arrow. |
 | Arrow | A | Drag from tail to point. Shift snaps to 45°. |
 | Box / Circle | R / O | Outline something. Shift for a square or perfect circle. |
 | Highlight | H | Translucent marker over an area. |
@@ -20,6 +20,12 @@ A native macOS screenshot and markup app for quick how-to images. Press a hotkey
 | Text | T | Click and type. Return finishes, Option-Return adds a line. |
 | Crop | C | Drag the area to keep. |
 | Select | V | Move items, drag the dots to reshape, Delete removes, double-click text to edit. |
+
+**Steps stay in order by themselves:**
+- **Delete** a step and the later ones move up (delete 3 of 1–7 → 1–6).
+- **Change a number:** select a step and type the new number (two digits work), or right-click › Change Number To. The steps in between shift, like reordering a list (7 → 3 makes the old 3–6 into 4–7).
+- **Insert:** set **Next** to a number that's already used (or type it with nothing selected), then click. The new step goes in and later ones move up.
+- To replace step 3, drag the existing 3 to its new spot, or delete it and insert a new 3.
 
 Picking a color or moving **Size** restyles the selected item. Undo and redo cover everything, crop included. Hover over any button to see what it does; the description also appears in the bar at the bottom.
 
@@ -29,6 +35,7 @@ The strip under the image shows your recent captures, newest first, like Snagit'
 
 ### Sending it
 
+- Every new capture is **already on your clipboard** the moment you take it (menu bar › Copy Each Capture to Clipboard). Turn on **Keep Clipboard Updated While Marking Up** to have each change copied automatically too.
 - **⌘C** copies the marked-up image. **⌘Return** copies it and closes the editor.
 - Drag the **Drag** box into Mail, Slack, Messages or a Finder folder.
 - **⌘S** saves to `~/Pictures/Mac Capture Studio`. Every capture is also kept there, and closing an editor with unsaved markup saves a “marked up” copy instead of discarding it.

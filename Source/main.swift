@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Show button descriptions quickly when hovering (the macOS default wait is long).
-        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 350])
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 350, "autoCopy": true, "liveClipboard": false])
         NSApp.mainMenu = buildMainMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let icon = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Mac Capture Studio")
@@ -137,6 +137,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let keysItem = NSMenuItem(title: "Capture Shortcut", action: nil, keyEquivalent: "")
         keysItem.submenu = keys
         menu.addItem(keysItem)
+
+        let auto = item("Copy Each Capture to Clipboard", #selector(toggleAutoCopy(_:)), target: self)
+        auto.state = UserDefaults.standard.bool(forKey: "autoCopy") ? .on : .off
+        auto.toolTip = "Puts every new capture on the clipboard the moment you take it, ready to paste."
+        menu.addItem(auto)
+        let live = item("Keep Clipboard Updated While Marking Up", #selector(toggleLiveClipboard(_:)), target: self)
+        live.state = UserDefaults.standard.bool(forKey: "liveClipboard") ? .on : .off
+        live.toolTip = "Every change in the editor (numbers, arrows, blur…) is copied automatically, so you can paste without pressing ⌘C."
+        menu.addItem(live)
 
         let login = item("Open at Login", #selector(toggleLogin(_:)), target: self)
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -282,7 +291,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openEditor(url: tmp, name: name); return
         }
         NotificationCenter.default.post(name: .capturesChanged, object: nil)
+        let copied = UserDefaults.standard.bool(forKey: "autoCopy")
+        if copied, let data = try? Data(contentsOf: dest) { EditorController.putOnClipboard(data) }
         openEditor(url: dest, name: name)
+        if copied {
+            editors.last?.announce(UserDefaults.standard.bool(forKey: "liveClipboard")
+                ? "On your clipboard. Markup is copied as you go."
+                : "Copied to clipboard. Mark it up, then ⌘C to copy again.")
+        }
     }
 
     // MARK: Editors
@@ -341,6 +357,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(AppDelegate.capturesFolder)
     }
 
+    @objc private func toggleAutoCopy(_ sender: Any?) {
+        UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: "autoCopy"), forKey: "autoCopy")
+    }
+
+    @objc private func toggleLiveClipboard(_ sender: Any?) {
+        UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: "liveClipboard"), forKey: "liveClipboard")
+    }
+
     @objc private func toggleLogin(_ sender: Any?) {
         do {
             if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
@@ -362,7 +386,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         • Click a color or move Size to restyle the selected item. Delete removes it.
 
         Send it fast:
-        • ⌘C copies, and ⌘Return copies and closes. Then paste into an email or chat.
+        • Each new capture is already on your clipboard, so you can paste right away.
+        • After marking up, ⌘C copies again, and ⌘Return copies and closes. Or turn on “Keep Clipboard Updated While Marking Up” in the menu bar so the markup is copied as you go.
         • Or drag the “Drag” box into Mail, Slack or Messages.
         • Every capture is kept in Pictures › Mac Capture Studio and shown in the history strip under the image. Click one to reopen it, or right-click for more.
         • Hover over any button to see what it does.
