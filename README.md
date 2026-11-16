@@ -4,7 +4,7 @@ A native macOS screenshot and markup app for quick how-to images. Press a hotkey
 
 ## Use it
 
-1. Open **Mac Capture Studio** from Applications. It lives in the menu bar (camera icon), not the Dock.
+1. Open **Mac Capture Studio** from Applications. It lives in the menu bar (camera icon), not the Dock. Opening the app again while it's running opens the editor.
 2. Press **⇧⌘2** anywhere. Drag across what you want, or press **Space** and click a window. **Esc** cancels.
 3. The first time, macOS asks for **Screen Recording** permission. Turn on Mac Capture Studio under System Settings › Privacy & Security › Screen & System Audio Recording, then choose **Restart App**.
 
@@ -42,7 +42,7 @@ The strip under the image shows your recent captures, newest first, like Snagit'
 
 ### Menu bar options
 
-Capture in 3 seconds (for open menus), New from Clipboard, Open Image…, Show Captures Folder, Capture Shortcut, Open at Login, and How to Use.
+**Open Editor** (top of the menu; brings the editor forward or opens your newest capture, also ⌘E), **Recent Captures** (your last 10, with thumbnails), Capture in 3 seconds (for open menus), New from Clipboard, Open Image…, Show Captures Folder, Capture Shortcut, Open at Login, and How to Use.
 
 ### Choosing your own shortcut
 

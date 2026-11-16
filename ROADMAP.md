@@ -27,3 +27,4 @@ A polished capture tool Sam uses daily: hotkey â†’ markup with numbered steps â†
 - Sam confirmed live hotkey capture works; merged to main (2026-11-16)
 - Choose-your-own capture shortcut (any modifier + key, or an F-key); step tool can grab and move existing numbers; hover descriptions on every button; Snagit-style capture history strip (2026-11-16)
 - Steps renumber on delete, can be renumbered by typing or right-click, and insert when the number exists; captures auto-copy to the clipboard, with an option to keep it updated while marking up (2026-11-16)
+- Menu bar: Open Editor and Recent Captures; reopening the app opens the editor (2026-11-16)

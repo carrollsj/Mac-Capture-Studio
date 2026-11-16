@@ -38,9 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    /// Double-clicking the app again starts a capture, which is usually what was wanted.
+    /// Opening the app again (Finder, Spotlight, Launchpad) opens the editor.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { capture(nil) }
+        if !flag { openEditorWindow(nil) }
         return true
     }
 
@@ -75,8 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item("Quit Mac Capture Studio", #selector(NSApplication.terminate(_:)), "q"),
         ])
         let newCapture = item("New Capture", #selector(capture(_:)), "n", target: self)
+        let openEd = item("Open Editor", #selector(openEditorWindow(_:)), "e", target: self)
         _ = add("File", [
             newCapture,
+            openEd,
             item("New from Clipboard", #selector(openClipboard(_:)), "n", [.command, .shift], target: self),
             item("Open…", #selector(openImage(_:)), "o", target: self),
             .separator(),
@@ -115,7 +117,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === statusMenu else { return }
         menu.removeAllItems()
+        let open = item("Open Editor", #selector(openEditorWindow(_:)), target: self)
+        open.image = NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: nil)
+        open.toolTip = "Opens the editor with your most recent capture and the capture history."
+        menu.addItem(open)
+
+        let recent = CaptureEntry.scan(AppDelegate.capturesFolder, limit: 10)
+        let recentItem = NSMenuItem(title: "Recent Captures", action: nil, keyEquivalent: "")
+        let recentMenu = NSMenu()
+        if recent.isEmpty {
+            let none = item("No captures yet", nil)
+            none.isEnabled = false
+            recentMenu.addItem(none)
+        }
+        for e in recent {
+            let r = item(e.title + (e.isMarkedUp ? "  ✎" : ""), #selector(openRecent(_:)), target: self)
+            r.representedObject = e.display
+            r.image = ImageLoader.thumbnail(e.display, maxPixels: 64).map { img in
+                let s = img.size, scale = 32 / max(s.width, s.height, 1)
+                img.size = NSSize(width: s.width * scale, height: s.height * scale)
+                return img
+            }
+            recentMenu.addItem(r)
+        }
+        recentItem.submenu = recentMenu
+        menu.addItem(recentItem)
+        menu.addItem(.separator())
+
         let cap = item("Capture Area or Window   \(hotkey.name)", #selector(capture(_:)), target: self)
+        cap.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: nil)
         menu.addItem(cap)
         menu.addItem(item("Capture in 3 Seconds", #selector(captureDelayed(_:)), target: self))
         menu.addItem(item("New from Clipboard", #selector(openClipboard(_:)), target: self))
@@ -328,6 +358,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.setActivationPolicy(.regular)
         ed.showAndFit()
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Brings an open editor forward, or opens one on the newest capture.
+    @objc func openEditorWindow(_ sender: Any?) {
+        if let ed = editors.last {
+            ed.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        guard let newest = CaptureEntry.scan(AppDelegate.capturesFolder, limit: 1).first else {
+            NSApp.activate(ignoringOtherApps: true)
+            let a = NSAlert()
+            a.messageText = "No captures yet"
+            a.informativeText = "Take your first capture with \(hotkey.name) and it will open in the editor."
+            a.addButton(withTitle: "Capture Now")
+            a.addButton(withTitle: "Open Image…")
+            a.addButton(withTitle: "Cancel")
+            switch a.runModal() {
+            case .alertFirstButtonReturn: capture(nil)
+            case .alertSecondButtonReturn: openImage(nil)
+            default: break
+            }
+            return
+        }
+        openEditor(url: newest.display, name: newest.title)
+    }
+
+    @objc private func openRecent(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        openEditor(url: url, name: CaptureEntry.baseName(of: url))
     }
 
     @objc private func openImage(_ sender: Any?) {
